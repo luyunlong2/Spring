@@ -1,0 +1,20 @@
+--applicationContext.xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans 
+       					   http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<bean id="UserService" class="a_Ioc.service.UserServiceImpl"></bean>
+</beans>
+--public class IocTest {
+	@Test
+	public void test(){
+		String xmlPath="a_Ioc/service/applicationContext.xml";
+		ApplicationContext applicationContext=new ClassPathXmlApplicationContext(xmlPath);
+		System.out.println("a");
+		UserService service=(UserService) applicationContext.getBean("UserService");
+		System.out.println("b");
+		service.addUser();
+	}
+}
