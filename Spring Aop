@@ -1,0 +1,144 @@
+spring中的AOP底层实现原理：动态代理。
+
+动态代理，照我的理解就是，在不修改原有类对象方法的源代码基础上，通过代理
+对象实现原有类对象方法的增强，也就是拓展原有类对象的功能。
+
+JDK动态代理中包含一个类和一个接口：
+
+ 
+InvocationHandler接口： 
+
+
+public interface InvocationHandler { 
+public Object invoke(Object proxy,Method method,Object[] args) throws Throwable; 
+} 
+
+
+参数说明： 
+
+
+Object proxy：指被代理的对象。 
+Method method：要调用的方法 
+Object[] args：方法调用时所需要的参数 
+
+可以将InvocationHandler接口的子类想象成一个代理的最终操作类，替换掉
+
+ProxySubject。
+
+Proxy类：
+
+ 
+Proxy类是专门完成代理的操作类，可以通过此类为一个或多个接口动态地生成实现类，此类提供了如下的操作方法：
+
+ 
+public static Object newProxyInstance(ClassLoader loader, Class<?>[] interfaces, InvocationHandler h) throws IllegalArgumentException 
+
+
+参数说明： 
+
+
+ClassLoader loader：类加载器 
+Class<?>[] interfaces：得到全部的接口 
+InvocationHandler h：得到InvocationHandler接口的子类实例 
+
+Ps:类加载器 
+
+在Proxy类中的newProxyInstance（）方法中需要一个ClassLoader类的实例，
+
+ClassLoader实际上对应的是类加载器，在Java中主要有一下三种类加载器; 
+
+Booststrap ClassLoader：此加载器采用C++编写，一般开发中是看不到的； 
+
+Extendsion ClassLoader：用来进行扩展类的加载，一般对应的是jre\lib\ext目录中的类; 
+AppClassLoader：(默认)加载classpath指定的类，是最常使用的是一种加载器。 
+动态代理 
+
+动态代理类的字节码在程序运行时由Java反射机制动态生成，无需程序员手工编写
+
+它的源代码。动态代理类不仅简化了编程工作，而且提高了软件系统的可扩展性，因为
+
+Java 反射机制可以生成任意类型的动态代理类。
+
+java.lang.reflect 包中的Proxy类和InvocationHandler 接口提供了生成动态代
+
+理类的能力。
+
+
+
+例子代码：
+
+
+
+1.先创建一个接口：
+package com.ls.reflect.demo;
+
+public interface StudentDao {
+	public abstract void login();
+	public abstract void regist();
+}
+
+2.再创建一个接口实现类：
+package com.ls.reflect.demo;
+
+public class StudentDaoImpl implements StudentDao {
+
+	public void login() {
+		System.out.println("登录");
+	}
+
+	public void regist() {
+		System.out.println("注册");
+	}
+
+}
+
+3.实现InvocationHandler 接口
+package com.ls.reflect.demo;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+
+public class MyInvocationHandler implements InvocationHandler {
+	private Object target;
+	public Object bind(Object target){
+        //绑定一个委托对象，其实就是接口实现对象
+		this.target=target;
+		//返回一个代理对象
+		return Proxy.newProxyInstance
+				(target.getClass().getClassLoader(), 
+						target.getClass().getInterfaces(), this);
+	}
+    //这里是最关键的部分，动态代理，实现方法增强
+	public Object invoke(Object proxy, Method met, Object[] arg2)
+			throws Throwable {
+		System.out.println("权限检查");
+		Object result=met.invoke(target, arg2);
+		System.out.println("日志记录");
+		return result;
+	}
+
+}
+
+4.测试代码：
+package com.ls.reflect.demo;
+
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Proxy;
+
+public class StudentDemo {
+	public static void main(String[] args) {
+	StudentDao sd=new StudentDaoImpl();
+	sd.login();
+	sd.regist();
+	System.out.println("----------");
+	
+	MyInvocationHandler handler=new MyInvocationHandler();
+	StudentDao proxy=(StudentDao)handler.bind(sd);
+	proxy.login();
+	proxy.regist();
+	
+	
+	
+}
+}
