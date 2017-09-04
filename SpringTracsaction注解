@@ -1,0 +1,207 @@
+事务的基本概念
+
+先来回顾一下事务的基本概念和特性。数据库事务(Database Transaction) ，是指作为单个逻辑工作单元执行的一系列操作，要么完全地执行，要么完全地不执行。事务，就必须具备ACID特性，即原子性（Atomicity）、一致性(Consistency)、隔离性(Isolation)和持久性(Durability)。
+回到顶部
+编程式事务与声明式事务
+
+Spring与Hibernate的整合实现的事务管理是常用的一种功能。Hibernate 建议所有的数据库访问都应放在事务内进行，即使只进行只读操作。事务又应该尽可能短，因为长事务会导致长时间无法释放表内行级锁，从而降低系统并发的性能。 Spring 同时支持编程式事务和声明式事务。
+ 
+编程式事务需要在代码中显式调用beginTransaction()、commit()、rollback()等事务管理相关的方法。Spring 的声明式事务管理在底层是建立在 AOP 的基础之上的，其本质是对方法前后进行拦截，然后在目标方法开始之前创建或者加入一个事务，在执行完目标方法之后根据执行情况提交或者回滚事务。事务增强也是AOP的一大用武之处。
+回到顶部
+使用声明式事务
+
+声明式事务最大的优点就是不需要通过编程的方式管理事务，这样就不需要在业务逻辑代码中掺杂事务管理的代码，只需在配置文件中做相关的事务规则声明，很好的分离了业务逻辑和事务管理逻辑。以spring+jpa整合增加声明式事务为例，下面是使用声明式事务的配置方式以及使用。
+applicationContext.xml配置
+
+<!-- 配置entityManagerFactory 配置 -->
+<bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+     <property name="dataSource" ref="dataSource" />
+     <property name="persistenceXmlLocation" value="/WEB-INF/classes/persistence.xml" />
+     <property name="loadTimeWeaver">
+             <bean class="org.springframework.instrument.classloading.InstrumentationLoadTimeWeaver" />
+     </property>
+</bean>
+ 
+<!-- 配置声明式事务管理，使用JpaTransactionManager作为事务管理器的实现类 –>
+<bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+          <property name="entityManagerFactory" ref="entityManagerFactory" />
+</bean>
+ 
+<!--声明业务组件使用注解生成事务代理 -->
+<tx:annotation-driven transaction-manager="transactionManager" />
+使用@Transactional 配置声明式事务管理
+
+在spirng 的配置文件中配置了事务管理和注解驱动之后，我们就可以在业务层使用@Transactional 配置声明式事务管理了。如下
+ 
+@Service
+@Transactional
+public class BaseService<T> implements IBaseService<T> {
+ 
+@Autowired
+private IBaseDao<T> baseDao;
+......
+}
+回到顶部
+@Transactional 深入使用
+
+上面我们已经知道了声明式事务管理的用法了，下面我们将进一步分析@Transactional在各种场景下用法。
+事务的传播行为
+
+@Transactional注解支持9个属性的设置，其中Propagation属性用来枚举事务的传播行为。所谓事务传播行为就是多个事务方法相互调用时，事务如何在这些方法间传播。Spring 支持 7 种事务传播行为：
+ 
+wps9181.tmp 
+ 
+REQUIRED 是常用的事务传播行为，如果当前没有事务，就新建一个事务，如果已经存在一个事务中，加入到这个事务中。其它传播行为大家可另查阅。
+多个事务方法的嵌套调用时的事务传播
+
+有三个事务方法调用嵌套关系如下：
+ 
+PayHisInfoService.update()->PayHisInfoService.save()->PayInfoService.update()
+ 
+@Transactional(propagation=Propagation.REQUIRED)
+public abstract class BaseService<E>{
+          public abstract List<E> findAll();
+}
+ 
+@Component
+public class PayHisInfoService extends BaseService<PayHisInfo>{
+       @Resource
+       private PayHisInfoDao payHisInfoDao;
+@Resource
+private PayInfoService payInfoService;
+ 
+       public  void update(PayHisInfo payHisInfo,PayInfo payInfo){
+     save(payHisInfo);
+            payInfoService.update(payInfo);
+      }
+      public int save(PayHisInfo payHisInfo){
+         return payHisInfoDao.insert(payHisInfo);
+      }
+}
+ 
+@Component
+public class PayInfoService extends BaseService<PayInfo>{
+     @Resource
+     private transient PayInfoDao payInfoDao;
+ 
+     @Override
+     @Transactional(propagation=Propagation.SUPPORTS, readOnly=true)
+     public List<PayInfo> findAll() {
+            return payInfoDao.findAll();
+     }
+ 
+     public int update(PayInfo payInfo){
+            return payInfoDao.update(payInfo);
+     }
+}
+ 
+ 
+当我们按照上面的调用嵌套关系执行时，结果如下
+ 
+
+
+ 
+ 
+ 
+从日志中我们可以看出，PayHisInfoService.update()执行时开启了一个事务，而PayHisInfoService.save()方法和PayHisInfoService.update()方法处于同一个类中，调用时没有发生事务传播，就像已经处于PayHisInfoService.update()方法的事务当中一样。而当执行PayInfoService.update()时，提示“Participating in existing transaction”，这说明发生了事务传播，即PayInfoService.update()并没有新建一个事务，而是加入到已有的PayHisInfoService.update()事务中。
+多线程环境下的事务传播
+
+现在我们将上面例子中的PayHisInfoService.update()用另一个线程来执行，如下
+ 
+@Component
+public class PayHisInfoService extends BaseService<PayHisInfo>{
+    @Resource
+    private PayHisInfoDao payHisInfoDao;
+    @Resource
+    private PayInfoService payInfoService;
+ 
+    public  void update(PayHisInfo payHisInfo,PayInfo payInfo){
+          save(payHisInfo);
+           //payInfoService.update(payInfo);
+         PayInfoThread pifth = new PayInfoThread(payInfoService,payInfo);
+         pifth.start();
+     }
+ 
+     public int save(PayHisInfo payHisInfo){
+          return payHisInfoDao.insert(payHisInfo);
+     }
+ 
+     private class PayInfoThread extends Thread{
+        private PayInfoService payInfoService;
+        private PayInfo payInfo;
+       
+        private PayInfoThread(PayInfoService payInfoService,PayInfo payInfo) {
+            this.payInfoService = payInfoService;
+            this.payInfo = payInfo;
+        }
+        public void run() {
+               System.out.println("PayInfoThread updating payInfo...");
+               payInfoService.update(payInfo);
+        }
+  }
+}
+ 
+当我们按照上面的调用嵌套关系执行时，结果如下
+ 
+
+
+ 
+ 
+从日志结果可以看出，在执行PayHisInfoService.update()和PayInfoService.update()时分别创建了各自的事务。而PayHisInfoService.save()和PayHisInfoService.update()则在同一个线程中执行。所以spring 的事务管理是线程安全的。
+在相同线程中进行相互嵌套调用的事务方法工作于相同的事务中。如果这些相互嵌套调用的方法工作在不同的线程中，不同线程下的事务方法工作在独立的事务中。
+@Transactional的继承关系
+
+或许你已经在上面的例子中看出了，我们只在父类BaseService中声明了@Transactional，子类就自然得到事务增强。注解并没有继承这种说法，但此处用“继承关系”来形容父类@Transactional和子类方法之间的关系最恰当不过了：父类Service声明了@Transactional，子类继承父类，父类的声明的@Transactional会对子类的所有方法进行事务增强。这个还有个很实用的用法，例如测试基类继承
+AbstractTransactionalJUnit4SpringContextTests
+声明@Transactional可方便进行事务测试
+ 
+@RunWith(SpringJUnit4ClassRunner.class)
+@ContextConfiguration("/applicationContext.xml")
+@TransactionConfiguration(transactionManager = "transactionManager", defaultRollback = true)
+@Transactional
+public class BaseTest extends AbstractTransactionalJUnit4SpringContextTests {
+        public Object getBean(String beanName){
+                return applicationContext.getBean(beanName);
+         }
+}
+ 
+给BaseTest 声明了@Transactional了之后，就会自动给我们自己编写的测试类中的所有测试方法进行事务增强。
+@Transactional的优先级
+
+如果子类的方法重写了父类的方法并且声明了@Transactional，那么子类的事务声明会优先于父类的事务声明。
+利用spring的AOP进行事务切面增强
+
+还是上面的列子，把父类声明的@Transactional去掉。在applicationContext.xml中配置事务增强切面，配置如下：
+ 
+<!--②使用aop和tx命名空间语法为PayHisInfoService所有公用方法添加事务增强 -->
+    <aop:config proxy-target-class="true">
+        <aop:pointcut id="serviceJdbcMethod"
+        expression="execution(public * com.xxx.service.PayHisInfoService.*(..))"/>
+        <aop:advisor pointcut-ref="serviceJdbcMethod" advice-ref="jdbcAdvice" order="0"/>
+    </aop:config>
+    <tx:advice id="jdbcAdvice" transaction-manager="transactionManager">
+        <tx:attributes>
+            <tx:method name="*"/>
+        </tx:attributes>
+    </tx:advice>
+ 
+运行测试用例，结果如下：
+ 
+
+
+ 
+ 
+当有一条数据更新失败时，事务会自动回滚，如下：
+ 
+wps9195.tmp 
+@Transactional方法的可见度
+
+上面为了测试演示方便，我们把@Transactional都声明在了类上。实际上@Transactional 可以作用于接口、接口方法、类以及类方法上。但是 Spring 小组建议不要在接口或者接口方法上使用该注解，因为这只有在使用基于接口的代理时它才会生效。另外， @Transactional 注解应该只被应用到 public 方法上，这是由 Spring AOP 的本质决定的（从上面的Spring AOP 事务增强可以看出，就是针对方法的）。如果你在 protected、private 或者默认可见性的方法上使用 @Transactional 注解，这将被忽略，也不会抛出任何异常。
+回到顶部
+总结
+
+（1）声明式事务优于编程式事务
+（2）事务方法的嵌套调用会产生事务传播
+（3）spring 的事务管理是线程安全的
+（4）父类的声明的@Transactional会对子类的所有方法进行事务增强
+（5）从Spring AOP本质看，@Transactional 注解应该只被应用到 public 方法上
