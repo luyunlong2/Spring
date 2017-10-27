@@ -1,0 +1,72 @@
+在java代码中可以使用@Autowire或者@Resource注解方式进行装配，这两个注解的区别是： 
+
+@Autowire默认按照类型装配，默认情况下它要求依赖对象必须存在如果允许为null，可以设置它required属性为false，如果我们想使用按照名称装配，可以结合@Qualifier注解一起使用; 
+
+@Resource默认按照名称装配，当找不到与名称匹配的bean才会按照类型装配，可以通过name属性指定，如果没有指定name属性，当注解标注在字段上，即默认取字段的名称作为bean名称寻找依赖对象，当注解标注在属性的setter方法上，即默认取属性名作为bean名称寻找依赖对象. 
+注意：如果没有指定name属性，并且按照默认的名称仍然找不到依赖的对象时候，会回退到按照类型装配，但一旦指定了name属性，就只能按照名称装配了. 
+建议使用@Resource。 
+
+
+spring中autowire的用法  
+
+Autowire模式就是在spring的声明文件里用作进行对象间的关联关系自动绑定的，就是在 spring beanfactory内的一个bean对其bean的引用可以自动进行，而不一定用ref=的方式显式声明。在reference的3.3.6节有详细 的介绍，autowire主要有5种模式： 
+
+
+
+1 no 
+
+不使用Autowire，引用关系显示声明，spring的reference也 建议不用autoware，因为这会破坏模块关系的可读性，原文如下： 
+
+Note: as has already been mentioned, for larger applications, it is discouraged to use autowiring because it 
+
+removes the transparency and the structure from your collaborating classes. 
+
+
+
+2 byName 
+
+用名称关联，如果指定了这种模式，如 
+
+   <bean id="userManagerTarget" class="com.mdcchina.jianghu.logic.UserManager" autowire="byName"> 
+
+       <property name="baseDAO"/> 
+
+   </bean> 
+
+这样对于bean userManagerTarget的属性baseDAO，spring就会自动去引用同名的bean，也就是上面的声明和下面是等价的： 
+
+   <bean id="userManagerTarget" class="com.mdcchina.jianghu.logic.UserManager" autowire="no"> 
+
+       <property name="baseDAO"> 
+
+          <ref local="baseDAO"/> 
+
+       </property> 
+
+   </bean> 
+
+
+
+3 byType 
+
+和前面的byName类似的，就是这个属性会在整个beanFactory定义里 找和这个属性一样的bean自动关联上，如果有2个或更多这个类型的bean在beanFactory的定义里，就直接抛异常了，如果没有，就什么都不发 生，这个属性就是null，所以这个只适用与这个属性的类型有且只有一个同类的bean在spring里定义 
+
+
+
+4 constructor 
+
+这个的意思我没有确定的把握，不过感觉用途也不会大，好像是用构造函数新建一个属 性类型的bean并关联上，reference原文是： 
+
+This is analogous to byType, but applies to constructor arguments. If there isn't exactly one 
+
+bean of the constructor argument type in the bean factory, a fatal error is raised. 
+
+
+
+5 autodetect 
+
+这个的意思好像是说自动决定用byType还是constructor方式，原文 如下： 
+
+Chooses constructor or byType through introspection of the bean class. If a default 
+
+constructor is found, byType gets applied. 
